@@ -103,7 +103,7 @@ config LINUX_KERNEL_IMAGE_HEADER
 
 config LNX_KRNL_IMG_TEXT_OFFSET_BASE
 	depends on LINUX_KERNEL_IMAGE_HEADER
-	hex
+	hex "Linux kernel image TEXT_OFFSET base"
 	help
 	  The value subtracted from CONFIG_TEXT_BASE to calculate the
 	  TEXT_OFFSET value written to the Linux kernel image header.
