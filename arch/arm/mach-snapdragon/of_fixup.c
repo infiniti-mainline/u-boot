@@ -18,18 +18,23 @@
 
 #define pr_fmt(fmt) "of_fixup: " fmt
 
+#include <asm/global_data.h>
 #include <dt-bindings/input/linux-event-codes.h>
 #include <dm/of_access.h>
 #include <dm/of.h>
 #include <dm/device.h>
 #include <dm/lists.h>
+#include <efi_loader.h>
 #include <event.h>
 #include <fdt_support.h>
+#include <init.h>
 #include <linux/errno.h>
 #include <linker_lists.h>
 #include <stdlib.h>
 #include <tee/optee.h>
 #include <time.h>
+
+DECLARE_GLOBAL_DATA_PTR;
 
 /**
  * find_ssphy_node() - Find the super-speed PHY node referenced by DWC3
@@ -281,7 +286,73 @@ static int qcom_of_fixup_nodes(void * __maybe_unused ctx, struct event *event)
 
 EVENT_SPY_FULL(EVT_OF_LIVE_BUILT, qcom_of_fixup_nodes);
 
-int ft_board_setup(void __maybe_unused *blob, struct bd_info __maybe_unused *bd)
+/*
+ * U-Boot's own DT may only list the memory that is safe for U-Boot to map,
+ * give the OS the previous bootloader's full memory map instead.
+ */
+static int prevbl_memory(u64 *start, u64 *size)
 {
-	return 0;
+	const void *prevbl = (const void *)(uintptr_t)get_prev_bl_fdt_addr();
+	const fdt64_t *reg;
+	int i, len, banks = 0;
+
+	if (!prevbl || prevbl == gd->fdt_blob || fdt_check_header(prevbl))
+		return 0;
+
+	reg = fdt_getprop(prevbl, fdt_path_offset(prevbl, "/memory"), "reg", &len);
+	if (!reg)
+		return 0;
+
+	for (i = 0; i < len / 16 && banks < CONFIG_NR_DRAM_BANKS; i++) {
+		size[banks] = fdt64_to_cpu(reg[2 * i + 1]);
+		if (!size[banks])
+			continue;
+		start[banks++] = fdt64_to_cpu(reg[2 * i]);
+	}
+
+	return banks;
 }
+
+int ft_board_setup(void *blob, struct bd_info *bd)
+{
+	u64 start[CONFIG_NR_DRAM_BANKS], size[CONFIG_NR_DRAM_BANKS];
+	int banks = prevbl_memory(start, size);
+
+	return banks ? fdt_fixup_memory_banks(blob, start, size, banks) : 0;
+}
+
+#if CONFIG_IS_ENABLED(EFI_LOADER)
+/* Add the memory U-Boot doesn't use as boot services data, so it stays untouched */
+void efi_add_known_memory(void)
+{
+	u64 start[CONFIG_NR_DRAM_BANKS], size[CONFIG_NR_DRAM_BANKS];
+	int i, j, banks = prevbl_memory(start, size);
+
+	for (i = 0; i < banks; i++) {
+		u64 s = start[i], e = start[i] + size[i];
+
+		while (s < e) {
+			u64 end = e;
+
+			for (j = 0; j < CONFIG_NR_DRAM_BANKS; j++) {
+				u64 bs = gd->dram[j].start;
+				u64 be = bs + gd->dram[j].size;
+
+				if (bs == be)
+					continue;
+				if (s >= bs && s < be) {
+					s = be;
+					end = 0;
+					break;
+				}
+				if (bs > s && bs < end)
+					end = bs;
+			}
+			if (!end)
+				continue;
+			efi_add_memory_map(s, end - s, EFI_BOOT_SERVICES_DATA);
+			s = end;
+		}
+	}
+}
+#endif
