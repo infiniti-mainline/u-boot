@@ -55,6 +55,13 @@ config PHY_QCOM_SNPS_EUSB2
 	  High-Speed PHY driver. This driver supports the Hi-Speed PHY which
 	  is usually paired with Synopsys DWC3 USB IPs on MSM SOCs.
 
+config PHY_QCOM_M31_EUSB2
+	tristate "Qualcomm M31 eUSB2 High-Speed PHY"
+	depends on PHY && ARCH_SNAPDRAGON
+	help
+	  Enable this to support the Qualcomm M31 eUSB2 High-Speed PHY found
+	  on SM8750 and newer SoCs.
+
 config PHY_QCOM_USB_HS_28NM
 	bool "Qualcomm 28nm High-Speed PHY"
 	depends on PHY && ARCH_SNAPDRAGON
