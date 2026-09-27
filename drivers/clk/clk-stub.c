@@ -49,6 +49,7 @@ static struct clk_ops stub_clk_ops = {
 };
 
 static const struct udevice_id stub_clk_ids[] = {
+	{ .compatible = "qcom,kaanapali-rpmh-clk" },
 	{ .compatible = "qcom,qcs615-rpmh-clk" },
 	{ .compatible = "qcom,rpmcc" },
 	{ .compatible = "qcom,sa8775p-rpmh-clk" },
