@@ -118,7 +118,11 @@ static int qcom_gpio_set_direction(struct udevice *dev, unsigned int offset,
 {
 	struct qcom_pmic_gpio_data *plat = dev_get_plat(dev);
 	uint32_t gpio_base = plat->pid + REG_OFFSET(offset);
-	int ret = 0;
+	int vin, ret = 0;
+
+	vin = pmic_reg_read(plat->pmic, gpio_base + REG_DIG_VIN_CTL);
+	if (vin < 0)
+		return vin;
 
 	/* Disable the GPIO */
 	ret = pmic_clrsetbits(dev->parent, gpio_base + REG_EN_CTL,
@@ -127,6 +131,13 @@ static int qcom_gpio_set_direction(struct udevice *dev, unsigned int offset,
 		return ret;
 
 	_qcom_gpio_set_direction(dev, offset, input, value);
+
+	/* Writing the mode can reset the input voltage select */
+	if (input) {
+		ret = pmic_reg_write(plat->pmic, gpio_base + REG_DIG_VIN_CTL, vin);
+		if (ret < 0)
+			return ret;
+	}
 
 	ret = pmic_reg_write(plat->pmic, gpio_base + REG_DIG_PULL_CTL, pull);
 	if (ret < 0)
@@ -360,6 +371,7 @@ U_BOOT_DRIVER(qcom_pmic_gpio) = {
 static const struct pinconf_param qcom_pmic_pinctrl_conf_params[] = {
 	{ "output-high", PIN_CONFIG_OUTPUT_ENABLE, 1 },
 	{ "output-low", PIN_CONFIG_OUTPUT, 0 },
+	{ "power-source", PIN_CONFIG_POWER_SOURCE, 0 },
 };
 
 static int qcom_pmic_pinctrl_get_pins_count(struct udevice *dev)
@@ -382,7 +394,12 @@ static const char *qcom_pmic_pinctrl_get_pin_name(struct udevice *dev, unsigned 
 static int qcom_pmic_pinctrl_pinconf_set(struct udevice *dev, unsigned int selector,
 					 unsigned int param, unsigned int arg)
 {
-	/* We only support configuring the pin as an output, either low or high */
+	struct qcom_pmic_gpio_data *plat = dev_get_plat(dev);
+
+	if (param == PIN_CONFIG_POWER_SOURCE)
+		return pmic_reg_write(plat->pmic, plat->pid + REG_OFFSET(selector) +
+				      REG_DIG_VIN_CTL, arg);
+
 	return _qcom_gpio_set_direction(dev, selector, false,
 					param == PIN_CONFIG_OUTPUT_ENABLE);
 }
