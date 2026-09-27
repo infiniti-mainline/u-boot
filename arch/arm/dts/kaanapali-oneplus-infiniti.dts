@@ -1,0 +1,243 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Minimal DT for U-Boot: RAM, UFS, USB for fastboot, the keys and ABL's
+ * framebuffer.
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/clock/qcom,kaanapali-gcc.h>
+#include <dt-bindings/clock/qcom,rpmh.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/linux-event-codes.h>
+#include <dt-bindings/spmi/spmi.h>
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	model = "OnePlus 15";
+	compatible = "oneplus,infiniti", "qcom,kaanapali";
+
+	chosen {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		framebuffer@fc800000 {
+			compatible = "simple-framebuffer";
+			reg = <0x0 0xfc800000 0x0 0x02b00000>;
+			width = <1272>;
+			height = <2772>;
+			stride = <(1272 * 4)>;
+			format = "a8r8g8b8";
+		};
+	};
+
+	/* RAM that is safe to map cacheable, leaving out firmware carveouts */
+	memory@a6400000 {
+		device_type = "memory";
+		reg = <0x0 0xa6400000 0x0 0x1d9d0000>,
+		      <0x0 0xc4800000 0x0 0x13000000>,
+		      <0x0 0xe34a0000 0x0 0x1c360000>,
+		      <0x8 0x80000000 0x0 0x2f6fd000>,
+		      <0x8 0xb0000000 0x0 0x06500000>,
+		      <0x8 0xc0000000 0x1 0x40000000>,
+		      <0xa 0x00000000 0x2 0x00000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		splash_region@fc800000 {
+			reg = <0x0 0xfc800000 0x0 0x02b00000>;
+		};
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-0 = <&key_vol_down_default>;
+		pinctrl-names = "default";
+
+		key-volume-down {
+			label = "Volume Down";
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpios = <&pmh0101_gpios 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		};
+	};
+
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "smc";
+	};
+
+	usb_ref_clk: clock-usb-ref {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <19200000>;
+	};
+
+	soc@0 {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		rpmhcc: clock-controller {
+			compatible = "qcom,kaanapali-rpmh-clk";
+			#clock-cells = <1>;
+		};
+
+		gcc: clock-controller@100000 {
+			compatible = "qcom,kaanapali-gcc";
+			reg = <0x0 0x00100000 0x0 0x1f4200>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+			#power-domain-cells = <1>;
+		};
+
+		ufs_mem_phy: phy@1d80000 {
+			compatible = "qcom,kaanapali-qmp-ufs-phy",
+				     "qcom,sm8750-qmp-ufs-phy";
+			reg = <0x0 0x01d80000 0x0 0x2000>;
+			clocks = <&rpmhcc RPMH_CXO_CLK>,
+				 <&gcc GCC_UFS_PHY_PHY_AUX_CLK>;
+			clock-names = "ref", "ref_aux";
+			power-domains = <&gcc GCC_UFS_MEM_PHY_GDSC>;
+			#phy-cells = <0>;
+		};
+
+		ufs@1d84000 {
+			compatible = "qcom,kaanapali-ufshc", "qcom,ufshc",
+				     "jedec,ufs-2.0";
+			reg = <0x0 0x01d84000 0x0 0x3000>;
+			clocks = <&gcc GCC_UFS_PHY_AXI_CLK>,
+				 <&gcc GCC_AGGRE_UFS_PHY_AXI_CLK>,
+				 <&gcc GCC_UFS_PHY_AHB_CLK>,
+				 <&gcc GCC_UFS_PHY_UNIPRO_CORE_CLK>,
+				 <&rpmhcc RPMH_LN_BB_CLK3>,
+				 <&gcc GCC_UFS_PHY_TX_SYMBOL_0_CLK>,
+				 <&gcc GCC_UFS_PHY_RX_SYMBOL_0_CLK>,
+				 <&gcc GCC_UFS_PHY_RX_SYMBOL_1_CLK>;
+			clock-names = "core_clk", "bus_aggr_clk", "iface_clk",
+				      "core_clk_unipro", "ref_clk",
+				      "tx_lane0_sync_clk", "rx_lane0_sync_clk",
+				      "rx_lane1_sync_clk";
+			freq-table-hz = <100000000 403000000>,
+					<0 0>,
+					<0 0>,
+					<100000000 403000000>,
+					<0 0>,
+					<0 0>,
+					<0 0>,
+					<0 0>;
+			resets = <&gcc GCC_UFS_PHY_BCR>;
+			reset-names = "rst";
+			power-domains = <&gcc GCC_UFS_PHY_GDSC>;
+			lanes-per-direction = <2>;
+			phys = <&ufs_mem_phy>;
+			phy-names = "ufsphy";
+		};
+
+		usb_1_hsphy: phy@88e3000 {
+			compatible = "qcom,kaanapali-m31-eusb2-phy",
+				     "qcom,sm8750-m31-eusb2-phy";
+			reg = <0x0 0x088e3000 0x0 0x400>;
+			#phy-cells = <0>;
+			clocks = <&usb_ref_clk>;
+			clock-names = "ref";
+			resets = <&gcc GCC_QUSB2PHY_PRIM_BCR>;
+		};
+
+		usb@a600000 {
+			compatible = "qcom,kaanapali-dwc3", "qcom,snps-dwc3";
+			reg = <0x0 0x0a600000 0x0 0xfc100>;
+			clocks = <&gcc GCC_CFG_NOC_USB3_PRIM_AXI_CLK>,
+				 <&gcc GCC_USB30_PRIM_MASTER_CLK>,
+				 <&gcc GCC_AGGRE_USB3_PRIM_AXI_CLK>,
+				 <&gcc GCC_USB30_PRIM_SLEEP_CLK>,
+				 <&gcc GCC_USB30_PRIM_MOCK_UTMI_CLK>;
+			clock-names = "cfg_noc", "core", "iface", "sleep",
+				      "mock_utmi";
+			resets = <&gcc GCC_USB30_PRIM_BCR>;
+			power-domains = <&gcc GCC_USB30_PRIM_GDSC>;
+			phys = <&usb_1_hsphy>;
+			phy-names = "usb2-phy";
+			dr_mode = "peripheral";
+			maximum-speed = "high-speed";
+			qcom,select-utmi-as-pipe-clk;
+			snps,dis_u2_susphy_quirk;
+			snps,dis_enblslpm_quirk;
+		};
+
+		arbiter@c400000 {
+			compatible = "qcom,kaanapali-spmi-pmic-arb",
+				     "qcom,glymur-spmi-pmic-arb";
+			reg = <0x0 0x0c400000 0x0 0x3000>,
+			      <0x0 0x0c900000 0x0 0x400000>,
+			      <0x0 0x0c4c0000 0x0 0x400000>,
+			      <0x0 0x0c403000 0x0 0x8000>;
+			reg-names = "core", "chnls", "obsrvr", "chnl_map";
+			#address-cells = <2>;
+			#size-cells = <2>;
+			ranges;
+			qcom,channel = <0>;
+			qcom,ee = <0>;
+
+			spmi@c426000 {
+				reg = <0x0 0x0c426000 0x0 0x4000>,
+				      <0x0 0x0c8c0000 0x0 0x10000>,
+				      <0x0 0x0c42a000 0x0 0x8000>;
+				reg-names = "cnfg", "intr", "chnl_owner";
+				#address-cells = <2>;
+				#size-cells = <0>;
+
+				pmic@0 {
+					compatible = "qcom,pmk8850", "qcom,spmi-pmic";
+					reg = <0x0 SPMI_USID>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					pon@1300 {
+						compatible = "qcom,pmk8350-pon";
+						reg = <0x1300>, <0x800>;
+						reg-names = "hlos", "pbs";
+
+						pwrkey {
+							compatible = "qcom,pmk8350-pwrkey";
+							linux,code = <KEY_POWER>;
+						};
+
+						resin {
+							compatible = "qcom,pmk8350-resin";
+							linux,code = <KEY_VOLUMEUP>;
+						};
+					};
+				};
+
+				pmic@1 {
+					compatible = "qcom,pmh0101", "qcom,spmi-pmic";
+					reg = <0x1 SPMI_USID>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					pmh0101_gpios: gpio@8800 {
+						compatible = "qcom,pmh0101-gpio",
+							     "qcom,spmi-gpio";
+						reg = <0x8800>;
+						gpio-controller;
+						gpio-ranges = <&pmh0101_gpios 0 0 18>;
+						#gpio-cells = <2>;
+
+						key_vol_down_default: key-vol-down-default-state {
+							pins = "gpio6";
+							power-source = <1>;
+						};
+					};
+				};
+			};
+		};
+	};
+};
