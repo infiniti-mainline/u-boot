@@ -56,6 +56,7 @@
 #define REG_DIG_VIN_VIN0       0
 
 #define REG_DIG_PULL_CTL       0x42
+#define REG_DIG_PULL_UP_30     0x0
 #define REG_DIG_PULL_NO_PU     0x5
 
 #define REG_LV_MV_OUTPUT_CTL	0x44
@@ -113,7 +114,7 @@ static int _qcom_gpio_set_direction(struct udevice *dev, u32 offset, bool input,
 }
 
 static int qcom_gpio_set_direction(struct udevice *dev, unsigned int offset,
-				   bool input, int value)
+				   bool input, int value, u8 pull)
 {
 	struct qcom_pmic_gpio_data *plat = dev_get_plat(dev);
 	uint32_t gpio_base = plat->pid + REG_OFFSET(offset);
@@ -127,9 +128,7 @@ static int qcom_gpio_set_direction(struct udevice *dev, unsigned int offset,
 
 	_qcom_gpio_set_direction(dev, offset, input, value);
 
-	/* Set the right pull (no pull) */
-	ret = pmic_reg_write(plat->pmic, gpio_base + REG_DIG_PULL_CTL,
-			     REG_DIG_PULL_NO_PU);
+	ret = pmic_reg_write(plat->pmic, gpio_base + REG_DIG_PULL_CTL, pull);
 	if (ret < 0)
 		return ret;
 
@@ -154,15 +153,13 @@ static int qcom_gpio_set_direction(struct udevice *dev, unsigned int offset,
 			       REG_EN_CTL_ENABLE);
 }
 
-static int qcom_gpio_direction_input(struct udevice *dev, unsigned offset)
+static int qcom_gpio_set_flags(struct udevice *dev, unsigned int offset,
+			       ulong flags)
 {
-	return qcom_gpio_set_direction(dev, offset, true, 0);
-}
+	u8 pull = flags & GPIOD_PULL_UP ? REG_DIG_PULL_UP_30 : REG_DIG_PULL_NO_PU;
 
-static int qcom_gpio_direction_output(struct udevice *dev, unsigned offset,
-				      int value)
-{
-	return qcom_gpio_set_direction(dev, offset, false, value);
+	return qcom_gpio_set_direction(dev, offset, !(flags & GPIOD_IS_OUT),
+				       !!(flags & GPIOD_IS_OUT_ACTIVE), pull);
 }
 
 static int qcom_gpio_get_function(struct udevice *dev, unsigned offset)
@@ -250,8 +247,7 @@ static int qcom_gpio_xlate(struct udevice *dev, struct gpio_desc *desc,
 }
 
 static const struct dm_gpio_ops qcom_gpio_ops = {
-	.direction_input	= qcom_gpio_direction_input,
-	.direction_output	= qcom_gpio_direction_output,
+	.set_flags		= qcom_gpio_set_flags,
 	.get_value		= qcom_gpio_get_value,
 	.set_value		= qcom_gpio_set_value,
 	.get_function		= qcom_gpio_get_function,
